@@ -6,11 +6,11 @@ export interface User {
 
 export interface Chat {
   id: string;
-  name: string;
+  name?: string;
   isGroup: boolean;
   users: User[];
-  avatarSrc: string;
-  lastMessage?: Message;
+  avatarSrc?: string;
+  messages: Message[];
 }
 
 export interface Message {

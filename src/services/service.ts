@@ -1,57 +1,70 @@
 import { users } from "../models/constants";
 import {
+  ChatDTO,
   ChatListRequest,
   ChatListResponse,
   GetChatMessagesRequest,
+  IncomingMessages,
   MessageDTO,
   OutgoingEventType,
   SendMessageRequest,
 } from "../models/dtos";
 import { Chat } from "../models/model";
 
-const chats = initializeHardcodedChats();
-
-function initializeHardcodedChats(): Map<Chat, MessageDTO[]> {
-  const chats = new Map<Chat, MessageDTO[]>();
-
-  users.forEach((user) => {
-    const chat: Chat = {
-      id: user.id,
-      users: [], // TODO: Add users
-      name: user.name,
-      isGroup: false,
-      avatarSrc: user.avatarSrc,
-    };
-
-    chats.set(chat, []);
-  });
-
-  return chats;
-}
+const chats = new Map<string, Chat>();
 
 export function fetchChatList(data: ChatListRequest): ChatListResponse {
-  const chatsArray = Array.from(chats.keys())
-    .filter((chat) => {
-      return chat.id !== data.userId;
-    })
-    .map((chat) => {
+  const currentUser = users.find((user) => user.id === data.userId);
+  if (!currentUser) {
+    throw new Error("User not found");
+  }
+
+  const otherUsersChat = users
+    .filter((user) => user.id !== data.userId)
+    .map((user) => {
       return {
-        ...chat,
-        lastMessage: chats.get(chat)?.[0],
+        id: [user.id, currentUser.id].sort().join("-"),
+        users: [user, currentUser],
+        name: user.name,
+        isGroup: false,
+        avatarSrc: user.avatarSrc,
+        messages: [],
       };
     });
 
-  return { type: OutgoingEventType.CHAT_LIST_RESPONSE, chats: chatsArray };
+  const chatsWithLastMessage = otherUsersChat
+    .map((chat) => {
+      const storedChat = getChatById(chat.id);
+      if (!storedChat) {
+        chats.set(chat.id, chat);
+        return chat;
+      }
+
+      return { ...chat, messages: storedChat.messages };
+    })
+    .map((chat) => {
+      return {
+        ...(chat as ChatDTO),
+        lastMessage: chat.messages[chat.messages.length - 1],
+      };
+    });
+
+  return {
+    type: OutgoingEventType.CHAT_LIST_RESPONSE,
+    chats: chatsWithLastMessage,
+  };
 }
 
-export function getChatMessages(data: GetChatMessagesRequest) {
-  const chat = getChatById(data.chatId);
+export function getChatMessages(
+  data: GetChatMessagesRequest
+): IncomingMessages {
+  let chat = getChatById(data.chatId);
 
   if (!chat) {
-    return { error: "Chat not found" };
+    throw new Error("Chat not found");
   }
 
-  const messages = chats.get(chat) || [];
+  const messages = chat.messages;
 
   return { type: OutgoingEventType.INCOMING_MESSAGES, messages };
 }
@@ -66,14 +79,14 @@ export function sendMessage(
   }
 
   const message: MessageDTO = {
-    id: chats.get(chat)?.length || 0,
+    id: chat.messages.length,
     chatId: chat.id,
     from: data.from,
     text: data.message,
     timestamp: new Date().toISOString(),
   };
 
-  chats.get(chat)?.push(message);
+  chat.messages.push(message);
 
   const incomingMessageEvent = {
     type: OutgoingEventType.INCOMING_MESSAGES,
@@ -84,7 +97,5 @@ export function sendMessage(
 }
 
 function getChatById(chatId: string) {
-  return Array.from(chats.keys()).find((chat) => {
-    return chat.id === chatId;
-  });
+  return chats.get(chatId);
 }
