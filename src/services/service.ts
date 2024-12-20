@@ -47,6 +47,20 @@ export function fetchChatList(data: ChatListRequest): ChatListResponse {
         ...(chat as ChatDTO),
         lastMessage: chat.messages[chat.messages.length - 1],
       };
+    })
+    .sort((a, b) => {
+      if (!a.lastMessage) {
+        return 1;
+      }
+
+      if (!b.lastMessage) {
+        return -1;
+      }
+
+      return (
+        new Date(b.lastMessage.timestamp).getTime() -
+        new Date(a.lastMessage.timestamp).getTime()
+      );
     });
 
   return {
