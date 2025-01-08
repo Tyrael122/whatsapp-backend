@@ -10,6 +10,7 @@ export interface Chat {
   isGroup: boolean;
   users: User[];
   avatarSrc?: string;
+  createdAt: string;
   messages: Message[];
 }
 

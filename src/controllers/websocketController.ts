@@ -1,38 +1,25 @@
 import WebSocket from "ws";
 import {
+  createGroupChat,
   fetchChatList,
+  getAllUsers,
   getChatMessages,
   sendMessage,
 } from "../services/service";
 import { IncomingEventType } from "../models/dtos";
 
 export const handleClientMessage = (
-  broadcastEvent: (event: any) => void,
-  ws: WebSocket,
-  message: WebSocket.RawData
+  sendMessage: (data: any) => void,
+  assignUserIdToConnection: (userId: string) => void,
+  data: any
 ) => {
-  let data;
-  try {
-    data = JSON.parse(message.toString());
-  } catch (err) {
-    ws.send(JSON.stringify({ error: "Invalid JSON format" }));
-    return;
-  }
-
   console.log("Processing message:", data);
 
-  // Handle specific message types
-  if (handleSystemEventTypes(ws, data)) {
+  if (handleWhatsAppEventTypes(sendMessage, data, assignUserIdToConnection)) {
     return;
   }
 
-  if (handleWhatsAppEventTypes(ws, data, broadcastEvent)) {
-    return;
-  }
-
-  // Handle unknown message types
-
-  ws.send(JSON.stringify({ error: "Unknown message type" }));
+  sendMessage({ error: "Unknown message type" });
 };
 
 export const handleConnectionClose = (ws: WebSocket) => {
@@ -40,32 +27,39 @@ export const handleConnectionClose = (ws: WebSocket) => {
   // Any cleanup logic if needed
 };
 
-function handleSystemEventTypes(ws: WebSocket, data: any) {
-  if (data.type === "PING") {
-    ws.send(JSON.stringify({ type: "PONG" }));
+function handleWhatsAppEventTypes(
+  send: (data: any) => void,
+  data: any,
+  assignUserIdToConnection: (userId: string) => void
+) {
+  if (data.type === IncomingEventType.USER_ID_INFO) {
+    // socketUserMap.set(data.userId, send);
+    assignUserIdToConnection(data.userId);
     return true;
   }
 
-  return false;
-}
-
-function handleWhatsAppEventTypes(
-  ws: WebSocket,
-  data: any,
-  broadcastEvent: (event: any) => void
-) {
   if (data.type === IncomingEventType.CHAT_LIST_REQUEST) {
-    ws.send(JSON.stringify(fetchChatList(data)));
+    send(fetchChatList(data));
     return true;
   }
 
   if (data.type === IncomingEventType.GET_CHAT_MESSAGES) {
-    ws.send(JSON.stringify(getChatMessages(data)));
+    send(getChatMessages(data));
     return true;
   }
 
   if (data.type === IncomingEventType.SEND_MESSAGE) {
-    sendMessage(data, broadcastEvent);
+    sendMessage(data);
+    return true;
+  }
+
+  if (data.type === IncomingEventType.CREATE_GROUP_CHAT) {
+    createGroupChat(data);
+    return true;
+  }
+
+  if (data.type === IncomingEventType.GET_ALL_USERS) {
+    send(getAllUsers());
     return true;
   }
 

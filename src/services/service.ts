@@ -3,6 +3,7 @@ import {
   ChatDTO,
   ChatListRequest,
   ChatListResponse,
+  CreateGroupChatRequest,
   GetChatMessagesRequest,
   IncomingMessages,
   MessageDTO,
@@ -10,8 +11,34 @@ import {
   SendMessageRequest,
 } from "../models/dtos";
 import { Chat } from "../models/model";
+import { sendMessageToUser } from "../websocket/websocketHandler";
 
 const chats = new Map<string, Chat>();
+
+export function createGroupChat(data: CreateGroupChatRequest) {
+  const chat: Chat = {
+    id: `group-${chats.size + 1}`,
+    name: data.name,
+    isGroup: true,
+    users: data.userIds.map((userId) => {
+      const user = users.find((user) => user.id === userId);
+      if (!user) {
+        throw new Error("User not found");
+      }
+
+      return user;
+    }),
+    avatarSrc: data.avatarSrc ? data.avatarSrc : undefined,
+    createdAt: new Date().toISOString(),
+    messages: [],
+  };
+
+  chats.set(chat.id, chat);
+
+  for (const userId of data.userIds) {
+    sendMessageToUser(userId, fetchChatList({ userId }));
+  }
+}
 
 export function fetchChatList(data: ChatListRequest): ChatListResponse {
   const currentUser = users.find((user) => user.id === data.userId);
@@ -28,11 +55,20 @@ export function fetchChatList(data: ChatListRequest): ChatListResponse {
         name: user.name,
         isGroup: false,
         avatarSrc: user.avatarSrc,
+        createdAt: new Date().toISOString(),
         messages: [],
       };
     });
 
-  const chatsWithLastMessage = otherUsersChat
+  const groupChats = Array.from(chats.values())
+    .filter((chat) => chat.isGroup)
+    .filter((chat) => {
+      return chat.users.some((user) => user.id === currentUser.id);
+    });
+
+  const allChats: Chat[] = [...otherUsersChat, ...groupChats];
+
+  const chatsWithLastMessage = allChats
     .map((chat) => {
       const storedChat = getChatById(chat.id);
       if (!storedChat) {
@@ -40,13 +76,20 @@ export function fetchChatList(data: ChatListRequest): ChatListResponse {
         return chat;
       }
 
-      return { ...chat, messages: storedChat.messages };
+      return {
+        ...chat,
+        messages: storedChat.messages,
+        createdAt: storedChat.createdAt,
+      };
     })
     .map((chat) => {
       return {
-        ...(chat as ChatDTO),
+        ...chat,
         lastMessage: chat.messages[chat.messages.length - 1],
       };
+    })
+    .sort((a, b) => {
+      return compareDateStrings(a.createdAt, b.createdAt);
     })
     .sort((a, b) => {
       if (!a.lastMessage) {
@@ -57,15 +100,15 @@ export function fetchChatList(data: ChatListRequest): ChatListResponse {
         return -1;
       }
 
-      return (
-        new Date(b.lastMessage.timestamp).getTime() -
-        new Date(a.lastMessage.timestamp).getTime()
+      return compareDateStrings(
+        a.lastMessage.timestamp,
+        b.lastMessage.timestamp
       );
     });
 
   return {
     type: OutgoingEventType.CHAT_LIST_RESPONSE,
-    chats: chatsWithLastMessage,
+    chats: chatsWithLastMessage as ChatDTO[],
   };
 }
 
@@ -83,10 +126,7 @@ export function getChatMessages(
   return { type: OutgoingEventType.INCOMING_MESSAGES, messages };
 }
 
-export function sendMessage(
-  data: SendMessageRequest,
-  broadcastEvent: (event: string) => void
-) {
+export function sendMessage(data: SendMessageRequest) {
   const chat = getChatById(data.chatId);
   if (!chat) {
     return { error: "Chat not found" };
@@ -107,9 +147,20 @@ export function sendMessage(
     messages: [message],
   };
 
-  broadcastEvent(JSON.stringify(incomingMessageEvent));
+  const chatUsers = chat.users.map((user) => user.id);
+  for (const userId of chatUsers) {
+    sendMessageToUser(userId, incomingMessageEvent);
+  }
+}
+
+export function getAllUsers() {
+  return { type: OutgoingEventType.ALL_USERS_RESPONSE, users };
 }
 
 function getChatById(chatId: string) {
   return chats.get(chatId);
+}
+
+function compareDateStrings(date1: string, date2: string) {
+  return new Date(date2).getTime() - new Date(date1).getTime();
 }

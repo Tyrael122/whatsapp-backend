@@ -1,28 +1,51 @@
-import { WebSocketServer } from 'ws';
-import { handleClientMessage, handleConnectionClose } from '../controllers/websocketController';
+import { WebSocket, WebSocketServer } from "ws";
+import {
+  handleClientMessage,
+  handleConnectionClose,
+} from "../controllers/websocketController";
 
-export const setupWebSocket = (wss: WebSocketServer) => {
-  function broadcastEvent(event: any) {
-    wss.clients.forEach((client) => {
-      client.send(event);
-    });
+type WebSocketMessage = {
+  id?: string; // Optional request ID for direct responses
+};
+
+const socketUserMap = new Map<string, WebSocket>();
+
+export function sendMessageToUser(userId: string, data: any, id?: string) {
+  const userSocket = socketUserMap.get(userId);
+  if (!userSocket) {
+    return;
   }
 
-  wss.on('connection', (ws) => {
-    console.log('New WebSocket connection established');
+  sendMessage(userSocket, data, id);
+}
+
+function sendMessage(webSocket: WebSocket, data: any, id?: string) {
+  const finalMessage = JSON.stringify({ ...data, id });
+
+  console.log("Sending:", finalMessage);
+
+  webSocket.send(finalMessage);
+}
+
+
+export const setupWebSocket = (wss: WebSocketServer) => {
+  wss.on("connection", (socket) => {
+    console.log("New WebSocket connection established");
 
     // Handle incoming messages
-    ws.on('message', (message) => {
-      console.log('Received:', message.toString());
-      handleClientMessage(broadcastEvent, ws, message); // Delegate to controller
+    socket.on("message", (message) => {
+      const parsedMessage = JSON.parse(message.toString()) as WebSocketMessage;
+
+      handleClientMessage(
+        (data) => sendMessage(socket, data, parsedMessage.id),
+        (userId) => socketUserMap.set(userId, socket),
+        parsedMessage
+      ); // Delegate to controller
     });
 
     // Handle disconnection
-    ws.on('close', () => {
-      handleConnectionClose(ws);
+    socket.on("close", () => {
+      handleConnectionClose(socket);
     });
-
-    // Optionally send a welcome message
-    // ws.send(JSON.stringify({ type: 'welcome', message: 'Connected to WebSocket server' }));
   });
 };
