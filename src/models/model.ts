@@ -18,6 +18,7 @@ export interface Message {
   id: number;
   chatId: string;
   from: string;
-  text: string;
+  message: string;
   timestamp: string;
+  isAudio: boolean;
 }

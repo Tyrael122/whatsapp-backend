@@ -33,6 +33,7 @@ export interface SendMessageRequest extends IncomingWhatsAppEvent {
   chatId: string;
   from: string;
   message: string;
+  isAudio: boolean;
 }
 
 export interface CreateGroupChatRequest extends IncomingWhatsAppEvent {
@@ -61,8 +62,9 @@ export interface MessageDTO {
   id: number;
   chatId: string;
   from: string;
-  text: string;
+  message: string;
   timestamp: string;
+  isAudio: boolean;
 }
 
 export interface UserDTO {

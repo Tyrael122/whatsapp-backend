@@ -12,6 +12,8 @@ import {
 } from "../models/dtos";
 import { Chat } from "../models/model";
 import { sendMessageToUser } from "../websocket/websocketHandler";
+import ffmpeg from "fluent-ffmpeg";
+import fs from "fs";
 
 const chats = new Map<string, Chat>();
 
@@ -126,7 +128,7 @@ export function getChatMessages(
   return { type: OutgoingEventType.INCOMING_MESSAGES, messages };
 }
 
-export function sendMessage(data: SendMessageRequest) {
+export async function sendMessage(data: SendMessageRequest) {
   const chat = getChatById(data.chatId);
   if (!chat) {
     return { error: "Chat not found" };
@@ -136,9 +138,17 @@ export function sendMessage(data: SendMessageRequest) {
     id: chat.messages.length,
     chatId: chat.id,
     from: data.from,
-    text: data.message,
+    isAudio: data.isAudio,
+    message: data.message,
     timestamp: new Date().toISOString(),
   };
+
+  console.log(
+    "Audio duration: ",
+    data.isAudio
+      ? await getDurationFromAudio(data.message)
+      : "Not an audio message"
+  );
 
   chat.messages.push(message);
 
@@ -163,4 +173,26 @@ function getChatById(chatId: string) {
 
 function compareDateStrings(date1: string, date2: string) {
   return new Date(date2).getTime() - new Date(date1).getTime();
+}
+
+function getDurationFromAudio(base64Audio: string) {
+  return new Promise((resolve, reject) => {
+    const audioBuffer = Buffer.from(base64Audio.split(",")[1], "base64"); // Extract the base64 data
+
+    // Write the buffer to a temporary file
+    const tempFilePath = `temp_audio_${Date.now()}.ogg`;
+    fs.writeFileSync(tempFilePath, audioBuffer);
+
+    ffmpeg.ffprobe(tempFilePath, (err, metadata) => {
+      // Cleanup the temporary file
+      fs.unlinkSync(tempFilePath);
+
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(metadata.format.duration);
+      console.log("Duration:", metadata.format.duration);
+    });
+  });
 }
